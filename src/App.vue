@@ -63,19 +63,42 @@ const handleFileUpload = (event) => {
     const data = new Uint8Array(e.target.result);
     const workbook = XLSX.read(data, { type: 'array' });
     let extraidos = [];
+    
     workbook.SheetNames.forEach(name => {
       const json = XLSX.utils.sheet_to_json(workbook.Sheets[name]);
+      
       json.forEach(row => {
-        if (row.NOMBRE && row.DIRECCIÓN) {
-          let tipo = name.toUpperCase().includes("RECOJO") ? "RECOJO" : name.toUpperCase().includes("INTERCAMBIO") ? "INTERCAMBIO" : "ENTREGA";
-          extraidos.push({ 
-            nom: row.NOMBRE, 
-            addr: `${row.DIRECCIÓN}, ${row.DISTRITO || ''}, Lima`,
-            tipo, motivo: row.MOTIVO || '' 
-          });
+        // Evitar filas vacías
+        if (!row.NOMBRE && !row.DOCUMENTO && !row.GUIA) return;
+        
+        const direccion = row.DIRECCIÓN || '';
+        const distrito = row.DISTRITO || '';
+        
+        // Evitar procesar si no hay una dirección válida para buscar en el mapa
+        if (!direccion && !distrito) return;
+        
+        const addr = `${direccion}, ${distrito}, Lima`.replace(/^, |, $/g, '').trim();
+        
+        // Identificar el tipo analizando la hoja o la columna MOTIVO
+        let tipo = "ENTREGA";
+        const mot = String(row.MOTIVO || "").toUpperCase();
+        const sName = name.toUpperCase();
+        
+        if (mot.includes("INTERCAMBIO") || sName.includes("INTERCAMBIO") || mot.includes("CAMBIO") || sName.includes("CAMBIO")) {
+          tipo = "INTERCAMBIO";
+        } else if (mot.includes("RECOJO") || sName.includes("RECOJO")) {
+          tipo = "RECOJO";
         }
+        
+        extraidos.push({ 
+          nom: row.NOMBRE || "Sin Nombre", 
+          addr: addr,
+          tipo: tipo, 
+          motivo: row.MOTIVO || '' 
+        });
       });
     });
+    
     // GUARDAR EN MEMORIA DEL CELULAR
     localStorage.setItem('ultima_ruta', JSON.stringify(extraidos));
     ruta.value = extraidos;
