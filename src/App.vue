@@ -11,7 +11,8 @@
         ⏳ Cargando: {{ procesadas }} de {{ totalRuta }}
       </div>
       <div class="leyenda" v-if="totalRuta > 0">
-        <span class="dot red"></span> Entregas | <span class="dot purple"></span> Recojos | <span class="dot orange"></span> Intercambios
+        <span class="dot red"></span> Entregas | <span class="dot purple"></span> Recojos | <span
+          class="dot orange"></span> Intercambios
       </div>
     </div>
     <div id="map" class="map-container"></div>
@@ -59,51 +60,64 @@ const handleFileUpload = (event) => {
   const file = event.target.files[0];
   if (!file) return;
   const reader = new FileReader();
+
   reader.onload = (e) => {
-    const data = new Uint8Array(e.target.result);
-    const workbook = XLSX.read(data, { type: 'array' });
-    let extraidos = [];
-    
-    workbook.SheetNames.forEach(name => {
-      const json = XLSX.utils.sheet_to_json(workbook.Sheets[name]);
-      
-      json.forEach(row => {
-        // Evitar filas vacías
-        if (!row.NOMBRE && !row.DOCUMENTO && !row.GUIA) return;
-        
-        const direccion = row.DIRECCIÓN || '';
-        const distrito = row.DISTRITO || '';
-        
-        // Evitar procesar si no hay una dirección válida para buscar en el mapa
-        if (!direccion && !distrito) return;
-        
-        const addr = `${direccion}, ${distrito}, Lima`.replace(/^, |, $/g, '').trim();
-        
-        // Identificar el tipo analizando la hoja o la columna MOTIVO
-        let tipo = "ENTREGA";
-        const mot = String(row.MOTIVO || "").toUpperCase();
-        const sName = name.toUpperCase();
-        
-        if (mot.includes("INTERCAMBIO") || sName.includes("INTERCAMBIO") || mot.includes("CAMBIO") || sName.includes("CAMBIO")) {
-          tipo = "INTERCAMBIO";
-        } else if (mot.includes("RECOJO") || sName.includes("RECOJO")) {
-          tipo = "RECOJO";
-        }
-        
-        extraidos.push({ 
-          nom: row.NOMBRE || "Sin Nombre", 
-          addr: addr,
-          tipo: tipo, 
-          motivo: row.MOTIVO || '' 
+    try {
+      const data = new Uint8Array(e.target.result);
+      const workbook = XLSX.read(data, { type: 'array' });
+      let extraidos = [];
+
+      workbook.SheetNames.forEach(name => {
+        const sheet = workbook.Sheets[name];
+        // defval: "" evita que las celdas vacías den error
+        const json = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+
+        json.forEach(row => {
+          // Evitar filas vacías
+          if (!row.NOMBRE && !row.Nombre && !row.DOCUMENTO && !row.Documento && !row.GUIA && !row.Guia) return;
+
+          // Leer la dirección de forma flexible
+          const direccionRaw = row.DIRECCIÓN || row.DIRECCION || row.Dirección || row.Direccion || "";
+          const distritoRaw = row.DISTRITO || row.Distrito || "";
+
+          // Evitar procesar si no hay una dirección válida para buscar en el mapa
+          if (!direccionRaw && !distritoRaw) return;
+
+          const addrCompleta = `${direccionRaw}, ${distritoRaw}, Lima`.replace(/^, |, $/g, '').trim();
+
+          // Identificar el tipo analizando la hoja o la columna MOTIVO
+          let tipo = "ENTREGA";
+          const mot = String(row.MOTIVO || row.Motivo || "").toUpperCase();
+          const sName = name.toUpperCase();
+
+          if (mot.includes("INTERCAMBIO") || sName.includes("INTERCAMBIO") || mot.includes("CAMBIO") || sName.includes("CAMBIO")) {
+            tipo = "INTERCAMBIO";
+          } else if (mot.includes("RECOJO") || sName.includes("RECOJO")) {
+            tipo = "RECOJO";
+          }
+
+          extraidos.push({
+            nom: row.NOMBRE || row.Nombre || "Sin Nombre",
+            addr: addrCompleta,
+            tipo: tipo,
+            motivo: row.MOTIVO || row.Motivo || ''
+          });
         });
       });
-    });
-    
-    // GUARDAR EN MEMORIA DEL CELULAR
-    localStorage.setItem('ultima_ruta', JSON.stringify(extraidos));
-    ruta.value = extraidos;
-    totalRuta.value = extraidos.length;
-    dibujarPuntosEnMapa(extraidos);
+
+      if (extraidos.length > 0) {
+        // GUARDAR EN MEMORIA DEL CELULAR
+        localStorage.setItem('ultima_ruta', JSON.stringify(extraidos));
+        ruta.value = extraidos;
+        totalRuta.value = extraidos.length;
+        dibujarPuntosEnMapa(extraidos);
+      } else {
+        alert("El archivo está vacío o no tiene columnas reconocibles.");
+      }
+    } catch (err) {
+      alert("Error leyendo el archivo Excel.");
+      console.error(err);
+    }
   };
   reader.readAsArrayBuffer(file);
 };
@@ -124,7 +138,7 @@ const dibujarPuntosEnMapa = (datos) => {
             map, position: pos, title: cliente.nom,
             icon: `http://maps.google.com/mapfiles/ms/icons/${color}-dot.png`
           });
-          
+
           // BOTÓN DE NAVEGACIÓN GPS
           const googleMapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(cliente.addr)}`;
           const wazeUrl = `https://waze.com/ul?q=${encodeURIComponent(cliente.addr)}&navigate=yes`;
@@ -164,14 +178,75 @@ const ubicarMiPosicion = () => {
 </script>
 
 <style scoped>
-.map-app { display: flex; flex-direction: column; height: 100vh; }
-.header { background: #1a1a1a; color: white; padding: 10px; text-align: center; }
-.controls { display: flex; gap: 8px; margin: 10px 0; }
-.btn-upload, .btn-locate { background: #007bff; color: white; padding: 12px; border-radius: 8px; flex: 1; cursor: pointer; border:none; font-weight:bold; font-size: 0.9em; }
-.btn-locate { background: #28a745; }
-.status { color: #ffc107; font-size: 0.8em; margin-bottom: 5px; }
-.leyenda { font-size: 0.75em; margin-bottom: 5px; }
-.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin: 0 3px 0 8px; }
-.red { background: #ff0000; } .purple { background: #a020f0; } .orange { background: #ffa500; }
-.map-container { flex-grow: 1; width: 100%; }
+.map-app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+.header {
+  background: #1a1a1a;
+  color: white;
+  padding: 10px;
+  text-align: center;
+}
+
+.controls {
+  display: flex;
+  gap: 8px;
+  margin: 10px 0;
+}
+
+.btn-upload,
+.btn-locate {
+  background: #007bff;
+  color: white;
+  padding: 12px;
+  border-radius: 8px;
+  flex: 1;
+  cursor: pointer;
+  border: none;
+  font-weight: bold;
+  font-size: 0.9em;
+}
+
+.btn-locate {
+  background: #28a745;
+}
+
+.status {
+  color: #ffc107;
+  font-size: 0.8em;
+  margin-bottom: 5px;
+}
+
+.leyenda {
+  font-size: 0.75em;
+  margin-bottom: 5px;
+}
+
+.dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin: 0 3px 0 8px;
+}
+
+.red {
+  background: #ff0000;
+}
+
+.purple {
+  background: #a020f0;
+}
+
+.orange {
+  background: #ffa500;
+}
+
+.map-container {
+  flex-grow: 1;
+  width: 100%;
+}
 </style>
